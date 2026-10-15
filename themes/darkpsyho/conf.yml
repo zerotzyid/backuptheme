@@ -1,0 +1,39 @@
+info:
+  name: "ZeroTzy - Theme"
+  identifier: "darkpsyho"
+  description: "ZeroTzy Darkpsyho - Premium Dark Aesthetic Theme for Pterodactyl"
+  flags: "hasInstallScript, hasExportScript, developerKeepApplicationCache, developerEscalateExportScript, developerEscalateInstallScript"
+  version: "1.0.0"
+  target: "beta-2024-08"
+  author: "zerotzyid"
+  icon: "darkpsyho.jpg"
+  website: "https://github.com/zerotzyid/backuptheme"
+
+admin:
+  view: "admin/view.blade.php"
+  controller: "admin/controller.php"
+  wrapper: "admin/layout.blade.php"
+  css: ""
+
+dashboard:
+  wrapper: "client/wrapper.blade.php"
+  css: ""
+  components: ""
+
+data:
+  directory: "private"
+  public: "public"
+
+requests:
+  views: "src/views"
+  controllers: ""
+  routers:
+    application: ""
+    client: ""
+    web: ""
+
+database:
+  migrations: ""
+
+console:
+  artisan: ""

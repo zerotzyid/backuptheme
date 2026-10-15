@@ -1,0 +1,18 @@
+/* ========================================================
+ * ZeroTzy - Theme : Darkpsyho
+ * Theme Core Stylesheet
+ * ======================================================== */
+
+@import url("/extensions/darkpsyho/libraries/darkpsyho.css");
+
+:root {
+  --darkpsyho-bg: #090a0f;
+  --darkpsyho-surface: #121520;
+  --darkpsyho-border: rgba(157, 78, 221, 0.25);
+  --darkpsyho-glow: rgba(157, 78, 221, 0.4);
+}
+
+body {
+  background-color: var(--darkpsyho-bg) !important;
+  color: #f1f5f9;
+}

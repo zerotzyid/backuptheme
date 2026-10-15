@@ -1,0 +1,116 @@
+/* ========================================================
+ * ZeroTzy - Theme : Darkpsyho
+ * Premium Dark Psycho Aesthetic Theme for Pterodactyl
+ * ======================================================== */
+
+:root {
+  --darkpsyho-glow: rgba(157, 78, 221, 0.35);
+  --darkpsyho-accent: #9d4edd;
+  --darkpsyho-accent-light: #c77dff;
+  --darkpsyho-cyan: #00f5d4;
+  --darkpsyho-crimson: #ff0054;
+  --darkpsyho-surface: #121520;
+}
+
+/* Custom Selection Highlight */
+::selection {
+  background-color: #7b2cbf !important;
+  color: #ffffff !important;
+}
+
+::-moz-selection {
+  background-color: #7b2cbf !important;
+  color: #ffffff !important;
+}
+
+/* Glowing Psycho Scrollbars */
+::-webkit-scrollbar {
+  width: 6px !important;
+  height: 6px !important;
+}
+
+::-webkit-scrollbar-track {
+  background: #090a0f !important;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #9d4edd 0%, #7209b7 100%) !important;
+  border-radius: 6px !important;
+  box-shadow: 0 0 10px rgba(157, 78, 221, 0.6) !important;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #c77dff 0%, #9d4edd 100%) !important;
+}
+
+/* Cards & Content Boxes Neon Border */
+div.ContentBox___StyledDiv-sc-mjlt6f-2.iGOcRf,
+.GreyRowBox-sc-1798363-0,
+.TitledGreyBox___StyledDiv-sc-gvsoy-0,
+.ServerRow__Container-sc-1wip64f-0 {
+  border: 1px solid rgba(157, 78, 221, 0.22) !important;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.7), 0 0 12px -3px rgba(157, 78, 221, 0.12) !important;
+  transition: all 0.22s ease-in-out !important;
+}
+
+.ServerRow__Container-sc-1wip64f-0:hover,
+.GreyRowBox-sc-1798363-0:hover {
+  border-color: rgba(199, 125, 255, 0.45) !important;
+  box-shadow: 0 8px 30px -4px rgba(0, 0, 0, 0.85), 0 0 18px rgba(157, 78, 221, 0.3) !important;
+  transform: translateY(-2px);
+}
+
+/* Neon Focus for Form Inputs */
+input:focus, select:focus, textarea:focus,
+.ZkNLd:focus, .jqTCDz:focus {
+  outline: none !important;
+  border: 1px solid #9d4edd !important;
+  box-shadow: 0 0 12px rgba(157, 78, 221, 0.45) !important;
+}
+
+/* Buttons Glow */
+button.Button__ButtonStyle-sc-1qu1gou-0[color="primary"],
+button.Button__ButtonStyle-sc-1qu1gou-0:not([color]) {
+  background: linear-gradient(135deg, #7b2cbf 0%, #9d4edd 100%) !important;
+  box-shadow: 0 2px 12px rgba(123, 44, 191, 0.4) !important;
+  border: 1px solid rgba(199, 125, 255, 0.35) !important;
+  transition: all 0.2s ease-in-out !important;
+}
+
+button.Button__ButtonStyle-sc-1qu1gou-0[color="primary"]:hover,
+button.Button__ButtonStyle-sc-1qu1gou-0:not([color]):hover {
+  box-shadow: 0 4px 20px rgba(157, 78, 221, 0.65) !important;
+  transform: translateY(-1px);
+}
+
+/* Sidebar Custom Indicator */
+.sidebarButton.active,
+.sidebarButton[active="true"] {
+  border-left: 3px solid #c77dff !important;
+  box-shadow: inset 5px 0 10px -3px rgba(199, 125, 255, 0.35) !important;
+}
+
+/* Watermark text enhancement */
+.nebula-watermark {
+  font-family: inherit !important;
+  letter-spacing: 0.5px;
+}
+
+.nebula-watermark b,
+.watermark-highlight {
+  color: #c77dff !important;
+  text-shadow: 0 0 8px rgba(199, 125, 255, 0.5) !important;
+}
+
+/* Server Terminal Border Glow */
+.ServerConsole___StyledDiv-sc-1k04c3e-0 {
+  border: 1px solid rgba(157, 78, 221, 0.25) !important;
+  box-shadow: 0 0 15px rgba(157, 78, 221, 0.12) !important;
+}
+
+/* Modal Popup Glow */
+div.Dialog___StyledDiv2-sc-1a20hvf-2,
+div[role="dialog"] > div {
+  border: 1px solid rgba(157, 78, 221, 0.3) !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9), 0 0 25px rgba(157, 78, 221, 0.2) !important;
+}
