@@ -284,7 +284,7 @@
               <option value="">— Pilih user —</option>
               @foreach($users as $user)
                 <option value="{{ $user->id }}" @if($user->root_admin) data-admin="1" @endif>
-                  {{ $user->name }} ({{ $user->email }}) @if($user->root_admin) [admin] @endif
+                  {{ $user->username }} ({{ $user->email }}) @if($user->root_admin) [admin] @endif
                 </option>
               @endforeach
             </select>

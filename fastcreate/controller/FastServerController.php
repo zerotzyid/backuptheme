@@ -3,24 +3,24 @@
 namespace Pterodactyl\Http\Controllers\Admin\Extensions\darkpsyho;
 
 use Illuminate\View\View;
+use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Pterodactyl\Models\Egg;
 use Pterodactyl\Models\Node;
 use Pterodactyl\Models\User;
 use Pterodactyl\Models\Location;
+use Pterodactyl\Models\Allocation;
 use Pterodactyl\Models\Objects\DeploymentObject;
 use Pterodactyl\Http\Controllers\Controller;
-use Pterodactyl\Http\Requests\Admin\AdminFormRequest;
 use Pterodactyl\Services\Servers\ServerCreationService;
 use Pterodactyl\BlueprintFramework\Libraries\ExtensionLibrary\Admin\BlueprintAdminLibrary as BlueprintExtensionLibrary;
 
 /**
  * FastServerController — ZeroTzy Darkpsyho
- * Membuat server secara instan dengan preset RAM 1 GB – 8 GB khusus admin.
+ * Pembuatan server instan khusus Administrator dengan preset RAM 1 GB – 8 GB.
  */
 class FastServerController extends Controller
 {
-    /** Preset paket RAM (MB) beserta disk yang mengikuti. */
     public const PRESETS = [
         1 => ['memory' => 1024, 'disk' => 2048,  'cpu' => 50,  'label' => '1 GB', 'color' => '#00f5d4'],
         2 => ['memory' => 2048, 'disk' => 4096,  'cpu' => 100, 'label' => '2 GB', 'color' => '#00bbf9'],
@@ -39,15 +39,16 @@ class FastServerController extends Controller
     }
 
     /**
-     * Tampilkan halaman Fast Create Server.
+     * Tampilkan halaman Fast Create.
      */
     public function index(): View
     {
-        $eggs = Egg::with('nest')->orderBy('name')->get();
-        $users = User::orderBy('name')->get(['id', 'email', 'name', 'root_admin']);
+        $eggs = Egg::with(['nest', 'variables'])->orderBy('name')->get();
+        $users = User::orderBy('username')->get(['id', 'email', 'username', 'root_admin']);
+        $locations = Location::with('nodes')->get();
         $nodes = Node::with('location')->get();
 
-        $allocFree = \Pterodactyl\Models\Allocation::query()
+        $allocFree = Allocation::query()
             ->whereNull('server_id')
             ->selectRaw('node_id, count(*) as total')
             ->groupBy('node_id')
@@ -57,42 +58,47 @@ class FastServerController extends Controller
             'eggs' => $eggs,
             'users' => $users,
             'nodes' => $nodes,
-            'locations' => Location::all(),
+            'locations' => $locations,
             'allocFree' => $allocFree,
             'presets' => self::PRESETS,
-            'blueprint' => $this->blueprint,
         ]);
     }
 
     /**
-     * Proses pembuatan server instan.
-     *
-     * @throws \Throwable
+     * Eksekusi pembuatan server.
      */
-    public function store(AdminFormRequest $request): RedirectResponse
+    public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
             'preset' => 'required|integer|between:1,8',
             'egg_id' => 'required|integer|exists:eggs,id',
-            'location_id' => 'nullable|integer|exists:locations,id',
             'user_id' => 'required|integer|exists:users,id',
             'name' => 'required|string|min:1|max:120',
+            'node_id' => 'nullable|integer|exists:nodes,id',
+            'location_id' => 'nullable|integer|exists:locations,id',
             'quantity' => 'nullable|integer|min:1|max:20',
+            'start_on_completion' => 'nullable|boolean',
         ]);
 
         $preset = self::PRESETS[(int) $validated['preset']];
         $quantity = (int) ($validated['quantity'] ?? 1);
-        $egg = Egg::findOrFail($validated['egg_id']);
+        $egg = Egg::with('variables')->findOrFail($validated['egg_id']);
         $created = [];
         $failed = [];
 
+        // Siapkan variabel default egg agar validator tidak gagal
+        $environment = [];
+        foreach ($egg->variables as $var) {
+            $environment[$var->env_variable] = $var->default_value ?? '';
+        }
+
         for ($i = 0; $i < $quantity; $i++) {
-            $name = $quantity > 1
+            $serverName = $quantity > 1
                 ? $validated['name'] . ' #' . ($i + 1)
                 : $validated['name'];
 
             $data = [
-                'name' => $name,
+                'name' => $serverName,
                 'owner_id' => (int) $validated['user_id'],
                 'egg_id' => $egg->id,
                 'nest_id' => $egg->nest_id,
@@ -108,28 +114,43 @@ class FastServerController extends Controller
                 'allocation_limit' => 0,
                 'backup_limit' => 2,
                 'oom_disabled' => true,
-                'start_on_completion' => false,
+                'start_on_completion' => !empty($validated['start_on_completion']),
+                'environment' => $environment,
             ];
 
-            $deployment = new DeploymentObject();
-            if (!empty($validated['location_id'])) {
-                $deployment->setLocations([(int) $validated['location_id']]);
+            // Tentukan node & allocation
+            $deployment = null;
+            if (!empty($validated['node_id'])) {
+                $node = Node::findOrFail($validated['node_id']);
+                $allocation = Allocation::where('node_id', $node->id)->whereNull('server_id')->first();
+                if (!$allocation) {
+                    $failed[] = "{$serverName}: Tidak ada alokasi port bebas di node '{$node->name}'.";
+                    continue;
+                }
+                $data['node_id'] = $node->id;
+                $data['allocation_id'] = $allocation->id;
+            } else {
+                $deployment = new DeploymentObject();
+                if (!empty($validated['location_id'])) {
+                    $deployment->setLocations([(int) $validated['location_id']]);
+                }
             }
 
             try {
                 $server = $this->creationService->handle($data, $deployment);
                 $created[] = $server->id;
             } catch (\Throwable $e) {
-                $failed[] = $name . ': ' . $e->getMessage();
+                $failed[] = "{$serverName}: " . $e->getMessage();
             }
         }
 
         if (count($created) > 0) {
-            $this->blueprint->alert('success', '✓ ' . count($created) . ' server (' . $preset['label'] . ') berhasil dibuat!');
+            $msg = '✓ Berhasil membuat ' . count($created) . ' server paket ' . $preset['label'] . ' RAM!';
+            $this->blueprint->alert('success', $msg);
         }
 
         if (count($failed) > 0) {
-            $this->blueprint->alert('danger', 'Gagal membuat ' . count($failed) . ' server: ' . implode(' | ', array_slice($failed, 0, 3)));
+            $this->blueprint->alert('danger', 'Ada kegagalan: ' . implode(' | ', array_slice($failed, 0, 3)));
         }
 
         if (count($created) === 1 && count($failed) === 0) {
