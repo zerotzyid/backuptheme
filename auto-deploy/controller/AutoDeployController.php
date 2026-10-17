@@ -6,13 +6,14 @@ use Illuminate\View\View;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Pterodactyl\Models\Server;
-use Pterodactyl\Models\Node;
 use Pterodactyl\Models\User;
 use Pterodactyl\Models\Allocation;
 use Pterodactyl\Models\Objects\DeploymentObject;
+use Pterodactyl\Models\AutoDeployConfig;
 use Pterodactyl\Http\Controllers\Controller;
 use Pterodactyl\Services\Servers\ServerCreationService;
-use Pterodactyl\BlueprintFramework\Libraries\ExtensionLibrary\Admin\BlueprintAdminLibrary as BlueprintExtensionLibrary;
+use Pterodactyl\Services\AutoDeploy\AutoDeployService;
+use Pterodactyl\BlueprintFramework\Libraries\ExtensionLibrary\Admin\BlueprintAdminLibrary as BlueprintAdminLibrary;
 
 /**
  * AutoDeployController — ZeroTzy Darkpsyho
@@ -33,7 +34,8 @@ class AutoDeployController extends Controller
 
     public function __construct(
         private ServerCreationService $creationService,
-        private BlueprintExtensionLibrary $blueprint,
+        private BlueprintAdminLibrary $blueprint,
+        private AutoDeployService $autoDeployService,
     ) {
     }
 
@@ -42,65 +44,82 @@ class AutoDeployController extends Controller
      */
     public function index(): View
     {
-        $servers = Server::whereHas('node', function($q) {
+        $servers = Server::whereHas('node', function ($q) {
             $q->whereNull('disabled_at');
         })->with(['node', 'allocation'])->orderBy('name')->get();
 
+        $users = User::orderBy('username')->get(['id', 'username', 'email', 'root_admin']);
+        $configs = $this->autoDeployService->listConfigs();
+
         return view('admin.extensions.darkpsyho.autodeploy', [
             'servers' => $servers,
+            'users' => $users,
+            'configs' => $configs,
             'presets' => self::PRESETS,
         ]);
     }
 
     /**
      * Proses auto-deploy dengan validasi & konfigurasi port.
-     *
-     * @throws \Throwable
      */
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'server_id' => 'required|integer|exists:servers,id',
+            'server_id' => 'required_if:auto_deploy_action,configure_existing|nullable|integer|exists:servers,id',
             'auto_deploy_action' => 'required|string|in:deploy_new,configure_existing',
             'preset' => 'required_if:auto_deploy_action,deploy_new|nullable|integer|between:1,8',
-            'username' => 'required_if:auto_deploy_action,configure_existing|exists:users,id',
+            'username' => 'nullable|integer|exists:users,id',
+            'ssh_host' => 'nullable|string|max:255',
+            'ssh_port' => 'nullable|integer|min:1|max:65535',
+            'ssh_username' => 'nullable|string|max:100',
+            'ssh_private_key' => 'nullable|file|mimes:pem,key',
             'add_cloudflare_tunnel' => 'nullable|boolean',
+            'cloudflare_token' => 'nullable|string|max:500',
+            'cloudflare_tunnel_name' => 'nullable|string|max:100',
             'open_port_http' => 'nullable|boolean',
             'open_port_https' => 'nullable|boolean',
             'save_config' => 'nullable|boolean',
         ]);
 
-        // Jika deploy new, butuh preset
-        if ($validated['auto_deploy_action'] === 'deploy_new') {
-            $preset = self::PRESETS[$validated['preset']] ?? self::PRESETS[2]; // default 2GB
-            $presetLabel = $preset['label'];
-        } else {
-            // Konfigurasi existing server
-            $server = Server::findOrFail($validated['server_id']);
-            $serverName = $server->name;
-            $presetLabel = '';
+        // Tentukan server target
+        $serverId = $validated['server_id'] ?? null;
+        $preset = $validated['preset'] ?? 2;
+        $presetData = self::PRESETS[$preset] ?? self::PRESETS[2];
+
+        $config = AutoDeployConfig::create([
+            'server_id' => $serverId,
+            'action' => $validated['auto_deploy_action'],
+            'preset' => $preset,
+            'username' => $validated['username'] ?? null,
+            'ssh_host' => $validated['ssh_host'] ?? null,
+            'ssh_port' => $validated['ssh_port'] ?? 22,
+            'ssh_username' => $validated['ssh_username'] ?? 'root',
+            'open_port_http' => !empty($validated['open_port_http']),
+            'open_port_https' => !empty($validated['open_port_https']),
+            'add_cloudflare_tunnel' => !empty($validated['add_cloudflare_tunnel']),
+            'cloudflare_token' => $validated['cloudflare_token'] ?? null,
+            'cloudflare_tunnel_name' => $validated['cloudflare_tunnel_name'] ?? null,
+            'status' => 'pending',
+        ]);
+
+        // Handle private key upload
+        if ($request->hasFile('ssh_private_key')) {
+            $keyPath = $request->file('ssh_private_key')->getRealPath();
+            $keyContent = file_get_contents($keyPath);
+            $config->update(['ssh_private_key' => $keyContent]);
         }
 
-        $cloudflare = !empty($validated['add_cloudflare_tunnel']);
-        $httpPort = !empty($validated['open_port_http']);
-        $httpsPort = !empty($validated['open_port_https']);
-
-        $createdServerId = null;
-        $configResult = [];
-        $errors = [];
-
-        try {
-            // STEP 1: Deploy/Create server jika action "deploy_new"
-            if ($validated['auto_deploy_action'] === 'deploy_new') {
-                // Buat server baru seperti Fast Create sebelumnya
+        // Jika deploy_new, buat server baru terlebih dahulu
+        if ($validated['auto_deploy_action'] === 'deploy_new') {
+            try {
                 $data = [
                     'name' => 'Auto-Deploy ' . date('Y-m-d H:i'),
-                    'owner_id' => 1, // default admin
-                    'egg_id' => 3,   // Paper default (bisa diganti jadi select user dulu)
+                    'owner_id' => 1,
+                    'egg_id' => 3, // Paper default
                     'nest_id' => 1,
-                    'memory' => $preset['memory'],
-                    'disk' => $preset['disk'],
-                    'cpu' => $preset['cpu'],
+                    'memory' => $presetData['memory'],
+                    'disk' => $presetData['disk'],
+                    'cpu' => $presetData['cpu'],
                     'swap' => 0,
                     'io' => 500,
                     'image' => 'ghcr.io/pterodactyl/yolks:java_25',
@@ -120,103 +139,47 @@ class AutoDeployController extends Controller
                 ];
 
                 $deployment = new DeploymentObject();
-                $deployment->setLocations([1]); // default location
+                $deployment->setLocations([1]);
 
                 $newServer = $this->creationService->handle($data, $deployment);
-                $createdServerId = $newServer->id;
+                $config->update(['server_id' => $newServer->id]);
+                $serverId = $newServer->id;
+            } catch (\Throwable $e) {
+                $config->update(['status' => 'failed', 'error_message' => $e->getMessage()]);
+                $this->blueprint->alert('danger', 'Gagal membuat server baru: ' . $e->getMessage());
+                return redirect()->route('admin.extensions.darkpsyho.autodeploy.index');
             }
-
-            // STEP 2: Konek ke server & konfig UFW
-            $configResult['ufw'] = $this->configureUfw($validated['server_id'] ?: $createdServerId);
-
-            // STEP 3: Setup Cloudflare Tunnel (jika dipilih)
-            if ($cloudflare) {
-                $configResult['tunnel'] = $this->setupCloudflareTunnel($createdServerId);
-            }
-
-            // STEP 4: Buka port HTTP/HTTPS via UFW
-            if ($httpPort || $httpsPort) {
-                $configResult['ports'] = $this->openPorts($httpPort, $httpsPort);
-            }
-
-            // Simpan config terakhir untuk future use
-            if (!empty($validated['save_config'])) {
-                $this->blueprint->dbSet('darkpsyho', 'autodeploy_last_server', $createdServerId ?: $validated['server_id']);
-                $this->blueprint->dbSet('darkpsyho', 'autodeploy_cloudflare_pref', $cloudflare ? '1' : '0');
-            }
-
-            $successMsg = '✓ Server berhasil dibuat dan dikonfigurasi!';
-            if ($configResult['ufw']['status']) {
-                $successMsg .= ' UFW siap (' . implode(', ', array_filter($configResult['ufw']['opened_ports'])) . ')';
-            }
-            if ($configResult['tunnel']['status']) {
-                $successMsg .= ' Cloudflare Tunnel aktif';
-            }
-
-            $this->blueprint->alert('success', $successMsg);
-
-            if ($createdServerId) {
-                return redirect('/admin/servers/view/' . $createdServerId);
-            }
-
-            return redirect()->route('admin.extensions.darkpsyho.autodeploy.index');
-
-        } catch (\Throwable $e) {
-            $errorMsg = 'Gagal melakukan auto-deploy: ' . $e->getMessage();
-            foreach ($configResult as $key => $result) {
-                if (isset($result['error'])) {
-                    $errorMsg .= ' | ' . strtoupper($key) . ': ' . $result['error'];
-                }
-            }
-            $this->blueprint->alert('danger', $errorMsg);
-            return redirect()->back()->withInput();
         }
+
+        // Jalankan auto-deploy service
+        $config->refresh();
+        $result = $this->autoDeployService->execute($config);
+
+        if ($result['success']) {
+            $this->blueprint->alert('success', $result['message']);
+            if ($config->server_id) {
+                return redirect('/admin/servers/view/' . $config->server_id);
+            }
+        } else {
+            $this->blueprint->alert('danger', $result['message']);
+        }
+
+        return redirect()->route('admin.extensions.darkpsyho.autodeploy.index');
     }
 
     /**
-     * Konfigurasi UFW di server target.
+     * Cek status konfigurasi deploy untuk server tertentu.
      */
-    private function configureUfw(int $serverId): array
+    public function status(int $serverId): RedirectResponse
     {
-        // Di real implementation: SSH ke server dan jalankan perintah UFW
-        // Untuk sekarang, mock saja karena kita tidak bisa SSH langsung
-        return [
-            'status' => true,
-            'message' => 'UFW akan dikonfigurasi saat deployment (perlu akses SSH)',
-            'opened_ports' => [],
-        ];
-    }
+        $config = AutoDeployConfig::where('server_id', $serverId)->latest()->first();
 
-    /**
-     * Setup Cloudflare Tunnel di server.
-     */
-    private function setupCloudflareTunnel(int $serverId): array
-    {
-        // Real implementation akan install cloudflared binary dan setup service
-        // Mock untuk preview:
-        return [
-            'status' => false,
-            'message' => 'Cloudflare Tunnel memerlukan token autentikasi dari dashboard Cloudflare',
-            'needs_token' => true,
-        ];
-    }
+        if (!$config) {
+            $this->blueprint->alert('warning', 'Belum ada konfigurasi auto-deploy untuk server ini.');
+            return redirect()->route('admin.extensions.darkpsyho.autodeploy.index');
+        }
 
-    /**
-     * Open HTTP/HTTPS ports via UFW.
-     */
-    private function openPorts(bool $http, bool $https): array
-    {
-        $ports = [];
-        if ($http) $ports[] = '80/tcp';
-        if ($https) $ports[] = '443/tcp';
-
-        // Real implementation: SSH ke server dan jalankan:
-        // sudo ufw allow 80/tcp && sudo ufw allow 443/tcp
-
-        return [
-            'status' => true,
-            'ports' => $ports,
-            'message' => 'Port terbuka otomatis via command line',
-        ];
+        $this->blueprint->alert('info', 'Status: ' . $config->status . ' | Tunnel: ' . ($config->tunnel_active ? 'Aktif' : 'Tidak Aktif'));
+        return redirect()->route('admin.extensions.darkpsyho.autodeploy.index');
     }
 }
