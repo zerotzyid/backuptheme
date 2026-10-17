@@ -257,7 +257,7 @@ CONFIG;
     /**
      * List semua konfigurasi deploy.
      */
-    public function listConfigs(): array
+    public function listConfigs()
     {
         return AutoDeployConfig::with('server')->orderBy('created_at', 'desc')->limit(20)->get();
     }

@@ -44,9 +44,7 @@ class AutoDeployController extends Controller
      */
     public function index(): View
     {
-        $servers = Server::whereHas('node', function ($q) {
-            $q->whereNull('disabled_at');
-        })->with(['node', 'allocation'])->orderBy('name')->get();
+        $servers = Server::with(['node', 'allocation'])->orderBy('name')->get();
 
         $users = User::orderBy('username')->get(['id', 'username', 'email', 'root_admin']);
         $configs = $this->autoDeployService->listConfigs();
